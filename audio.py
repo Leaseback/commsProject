@@ -64,7 +64,7 @@ def tcp_handshake(server_ip, tcp_port):
 
 
 def record_and_send_audio():
-    """Continuously records audio and sends packets over UDP if voice is detected."""
+    """Continuously records audio and sends packets over UDP every 20ms."""
     print("Recording and sending... Press Enter to stop and send EOT.")
 
     def callback(indata, frames, time, status):
@@ -72,23 +72,19 @@ def record_and_send_audio():
         if status:
             print(status)
 
-        # Measure volume (RMS of audio data)
-        volume_norm = np.linalg.norm(indata) / np.sqrt(len(indata))
+        # Convert audio to 16-bit PCM and bytes
+        audio_bytes = (indata * 32767).astype(np.int16).tobytes()
 
-        # Only send audio if volume exceeds the threshold (voice detected)
-        if volume_norm > THRESHOLD:
-            # Convert audio to 16-bit PCM and bytes
-            audio_bytes = (indata * 32767).astype(np.int16).tobytes()
-
-            # Send in CHUNK_SIZE packets
-            for i in range(0, len(audio_bytes), CHUNK_SIZE):
-                chunk = audio_bytes[i:i + CHUNK_SIZE]
-                udp_sock.sendto(chunk, (UDP_IP, UDP_PORT))
+        # Send audio in 882-sample chunks (20ms of audio)
+        for i in range(0, len(audio_bytes), 882 * 2):  # 2 bytes per sample for 16-bit PCM
+            chunk = audio_bytes[i:i + 882 * 2]  # 882 samples * 2 bytes/sample
+            udp_sock.sendto(chunk, (UDP_IP, UDP_PORT))
 
     # Open the input stream and record continuously
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, callback=callback):
         while is_recording:
-            sd.sleep(100)
+            # Sleep to maintain 20ms intervals for sending packets
+            sd.sleep(20)  # Sleep for 20ms (20ms * 44.1kHz = 882 samples)
 
 
 def send_eot():

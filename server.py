@@ -6,7 +6,7 @@ TCP_IP = "0.0.0.0"  # Listen on all interfaces for TCP
 TCP_PORT = 8888  # Port for TCP handshakes
 UDP_IP = "0.0.0.0"  # Listen on all interfaces for UDP
 UDP_PORT = 9999  # Port for UDP audio data
-BUFFER_SIZE = 1024  # Size of audio packets
+BUFFER_SIZE = 2200  # Size of audio packets
 EOT_SEQ_NUM = 99999999  # End-of-transmission signal
 MAX_CLIENTS = 10  # Maximum number of connected clients
 
