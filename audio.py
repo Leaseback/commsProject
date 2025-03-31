@@ -102,10 +102,20 @@ def wait_for_exit():
     sys.exit(0)
 
 
+import sys
+
+
 def main():
+    global UDP_IP
     """Main entry point for the audio client."""
+    if len(sys.argv) < 2:
+        print("Usage: python Audio.py <server_ip>")
+        sys.exit(1)
+
+    server_ip = sys.argv[1]  # Get the server IP from command line argument
+    UDP_IP = server_ip  # Set the server IP for UDP
     # Perform TCP handshake before starting audio
-    if tcp_handshake(UDP_IP, TCP_PORT):
+    if tcp_handshake(server_ip, TCP_PORT):
         # Start audio recording and sending in a separate thread
         import threading
         audio_thread = threading.Thread(target=record_and_send_audio)
@@ -117,6 +127,9 @@ def main():
         print("Failed to establish connection. Exiting.")
         sys.exit(1)
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()

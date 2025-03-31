@@ -5,6 +5,7 @@ import sounddevice as sd
 import time
 import threading
 from ping3 import ping, verbose_ping
+import sys
 
 # Constants
 PACKET_SIZE = 2200
@@ -14,7 +15,7 @@ CHANNELS = 1  # Mono audio
 BUFFER_SIZE = 100  # Jitter buffer size (in number of packets)
 RTT_UPDATE_INTERVAL = 10  # Time in seconds to recalculate RTT
 PLAYBACK_INTERVAL_MS = 20  # Play audio every XX ms
-
+SERVER_IP = 0
 
 class Receiver:
     def __init__(self, receiver_socket, server_ip):
@@ -94,7 +95,7 @@ class Receiver:
 
         while not self.eot_received:
             try:
-                packet, _ = self.sock.recvfrom(PACKET_SIZE)
+                packet, addr = self.sock.recvfrom(PACKET_SIZE)
 
                 # Handle EOT or ACK packet
                 if len(packet) == 4:  # Possible EOT or ACK
@@ -103,9 +104,9 @@ class Receiver:
                         print("Receiver: End of transmission received.")
                         self.eot_received = True
                         break
-
-                # Add valid packet data to jitter buffer
-                self.add_to_jitter_buffer(packet)
+                if addr[0] != SERVER_IP:
+                    # Add valid packet data to jitter buffer
+                    self.add_to_jitter_buffer(packet)
 
             except socket.timeout:
                 continue
@@ -115,18 +116,25 @@ class Receiver:
         self.eot_received = True
         self.sock.close()
 
-
 def main():
-    server_ip = "127.0.0.1"  # Example server IP
+    if len(sys.argv) < 2:
+        print("Usage: python Receiver.py <server_ip>")
+        sys.exit(1)
+
+    SERVER_IP = sys.argv[1]  # Get the server IP from command line argument
+
     # Initialize the receiver socket and bind to listen for packets
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    receiver_sock.bind(("localhost", 9999))  # Listen on this port
+    receiver_sock.bind(("0.0.0.0", 9999))  # Listen on this port
 
-    receiver = Receiver(receiver_sock, server_ip)
+    receiver = Receiver(receiver_sock, SERVER_IP)
 
     # Start the receiver to begin receiving packets
     receiver.start()
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
