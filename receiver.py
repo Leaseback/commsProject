@@ -17,6 +17,7 @@ RTT_UPDATE_INTERVAL = 10  # Time in seconds to recalculate RTT
 PLAYBACK_INTERVAL_MS = 20  # Play audio every XX ms
 SERVER_IP = 0
 
+
 class Receiver:
     def __init__(self, receiver_socket, server_ip):
         self.sock = receiver_socket
@@ -74,7 +75,6 @@ class Receiver:
                     # Convert bytes to NumPy array (16-bit PCM format)
                     audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
 
-
                     # Ensure correct shape for mono audio
                     audio_data = np.reshape(audio_data, (-1, 1))
 
@@ -93,17 +93,10 @@ class Receiver:
         playback_thread.daemon = True
         playback_thread.start()
 
-        while not self.eot_received:
+        while True:
             try:
                 packet, addr = self.sock.recvfrom(PACKET_SIZE)
 
-                # Handle EOT or ACK packet
-                if len(packet) == 4:  # Possible EOT or ACK
-                    seq_num = struct.unpack("!I", packet)[0]
-                    if seq_num == EOT_SEQ_NUM:
-                        print("Receiver: End of transmission received.")
-                        self.eot_received = True
-                        break
                 if addr[0] != SERVER_IP:
                     # Add valid packet data to jitter buffer
                     self.add_to_jitter_buffer(packet)
@@ -113,13 +106,15 @@ class Receiver:
 
     def stop(self):
         """Stop the receiver."""
-        self.eot_received = True
         self.sock.close()
+
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python Receiver.py <server_ip>")
         sys.exit(1)
+
+    global SERVER_IP
 
     SERVER_IP = sys.argv[1]  # Get the server IP from command line argument
 
@@ -132,9 +127,6 @@ def main():
     # Start the receiver to begin receiving packets
     receiver.start()
 
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
