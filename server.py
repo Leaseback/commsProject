@@ -35,7 +35,7 @@ def receive_audio():
     while True:
         try:
             data, addr = server_socket.recvfrom(BUFFER_SIZE)
-            print(f"Received data from {addr}")
+            # print(f"Received data from {addr}")
             threading.Thread(target=handle_client, args=(data, addr)).start()
         except Exception as e:
             print(f"Error receiving data: {e}")
