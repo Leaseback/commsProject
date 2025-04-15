@@ -14,7 +14,7 @@ CHUNK_SIZE = 882  # 20ms at 44100Hz
 BYTES_PER_PACKET = CHUNK_SIZE * 2  # 1764 bytes
 PACKET_SIZE = 2200  # Buffer size (1768 bytes used)
 EOT_SEQ_NUM = 99999999
-JITTER_BUFFER_SIZE = 4
+JITTER_BUFFER_SIZE = 8
 PLAYBACK_INTERVAL_MS = 20
 TCP_PORT = 8888
 UDP_SERVER_PORT = 9999
@@ -51,12 +51,11 @@ class JitterBuffer:
     def get_packet(self):
         if not self.buffer:
             return None, None
-        seq_num, audio_data = self.buffer[0]
-        if self.expected_seq_num is None or seq_num <= self.expected_seq_num:
-            self.buffer.popleft()
-            self.expected_seq_num = seq_num + 1
-            return seq_num, audio_data
-        return None, None
+        seq_num, audio_data = self.buffer.popleft()
+        self.expected_seq_num = seq_num + 1
+        return seq_num, audio_data
+
+
 
 class Client:
     def __init__(self, udp_port, server_ip, target_ip):
@@ -132,10 +131,10 @@ class Client:
                 print(f"Input status: {status}")
             if not self.is_recording:
                 return
-            peak_amplitude = np.max(np.abs(indata))
-            print(f"Recording chunk, peak amplitude: {peak_amplitude:.4f}")
-            if peak_amplitude < SILENCE_THRESHOLD:
-                print("Warning: Audio input is very quiet.")
+            # peak_amplitude = np.max(np.abs(indata))
+            # print(f"Recording chunk, peak amplitude: {peak_amplitude:.4f}")
+            # if peak_amplitude < SILENCE_THRESHOLD:
+                # print("Warning: Audio input is very quiet.")
             audio_data = (indata * 32767).astype(np.int16)
             audio_bytes = audio_data.tobytes()
             for i in range(0, len(audio_bytes), BYTES_PER_PACKET):
@@ -144,7 +143,7 @@ class Client:
                     packet = struct.pack(">I", self.sequence_number) + chunk
                     try:
                         self.udp_sock.sendto(packet, (self.server_ip, UDP_SERVER_PORT))
-                        print(f"Sent packet seq_num: {self.sequence_number}, size: {len(packet)}")
+                        # print(f"Sent packet seq_num: {self.sequence_number}, size: {len(packet)}")
                         self.sequence_number += 1
                     except Exception as e:
                         print(f"Error sending packet: {e}")
@@ -193,6 +192,8 @@ class Client:
                     self.eot_received = True
                     break
                 if len(audio_data) == BYTES_PER_PACKET:
+                    print("PACKET SEQUENCE NUMBER: " + str(seq_num))
+                    print(len(audio_data))
                     self.jitter_buffer.add_packet(seq_num, audio_data)
                     print(f"Added packet seq_num: {seq_num}")
                 else:
@@ -217,11 +218,20 @@ class Client:
         threads = [
             threading.Thread(target=self.record_and_send_audio, daemon=True),
             threading.Thread(target=self.receive_audio, daemon=True),
-            threading.Thread(target=self.play_audio, daemon=True),
-            threading.Thread(target=self.send_heartbeat, daemon=True)
         ]
+
+        # Start receiving and recording first
         for t in threads:
             t.start()
+
+        # Wait to allow jitter buffer to prefill
+        time.sleep(0.2)  # adjust as needed based on network jitter
+
+        # Now start playback and heartbeat
+        playback_thread = threading.Thread(target=self.play_audio, daemon=True)
+        heartbeat_thread = threading.Thread(target=self.send_heartbeat, daemon=True)
+        playback_thread.start()
+        heartbeat_thread.start()
         print("Client running. Type 'quit' to stop.")
         try:
             while self.is_running:
