@@ -2,7 +2,7 @@ This program allows you to host a server and have clients connect to it and voic
 
 To begin:
 1) Download the program
-2) Ensure all dependencies installed (requirements.txt) # TODO: Add requirements.txt and the cmd to install them
+2) Ensure all dependencies installed (requirements.txt)
 3) Download server.py to desired host machine and run it
 4) Run launcher.py on client
 5) Enter IP address of server to join
