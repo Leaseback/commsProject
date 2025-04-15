@@ -4,129 +4,154 @@ import numpy as np
 import sounddevice as sd
 import time
 import threading
-from ping3 import ping, verbose_ping
+from ping3 import ping
 import sys
+from collections import deque
 
 # Constants
 PACKET_SIZE = 2200
-EOT_SEQ_NUM = 99999999  # End-of-transmission signal
-SAMPLE_RATE = 44100  # Audio sample rate
-CHANNELS = 1  # Mono audio
-BUFFER_SIZE = 100  # Jitter buffer size (in number of packets)
-RTT_UPDATE_INTERVAL = 10  # Time in seconds to recalculate RTT
-PLAYBACK_INTERVAL_MS = 20  # Play audio every XX ms
-SERVER_IP = 0
+EOT_SEQ_NUM = 99999999
+SAMPLE_RATE = 44100
+CHANNELS = 1
+JITTER_BUFFER_SIZE = 4  # 4 packets = 80ms
+RTT_UPDATE_INTERVAL = 10
+PLAYBACK_INTERVAL_MS = 20
+SAMPLES_PER_PACKET = 882  # 20ms at 44100Hz
+SERVER_IP = None
 
+class JitterBuffer:
+    """A jitter buffer to store and reorder audio packets."""
+    def __init__(self, max_size):
+        self.buffer = deque(maxlen=max_size)
+        self.max_size = max_size
+        self.expected_seq_num = None
+
+    def add_packet(self, seq_num, audio_data):
+        """Add a packet to the buffer, maintaining order."""
+        if self.expected_seq_num is not None and seq_num < self.expected_seq_num - self.max_size:
+            return False
+        packet = (seq_num, audio_data)
+        if not self.buffer:
+            self.buffer.append(packet)
+            self.expected_seq_num = seq_num
+            return True
+        for existing_seq, _ in self.buffer:
+            if seq_num == existing_seq:
+                return False
+        temp = list(self.buffer)
+        temp.append(packet)
+        temp.sort(key=lambda x: x[0])
+        self.buffer.clear()
+        for item in temp[-self.max_size:]:
+            self.buffer.append(item)
+        return True
+
+    def get_packet(self):
+        """Retrieve the next packet for playback."""
+        if not self.buffer:
+            return None, None
+        seq_num, audio_data = self.buffer[0]
+        if self.expected_seq_num is None or seq_num <= self.expected_seq_num:
+            self.buffer.popleft()
+            self.expected_seq_num = seq_num + 1
+            return seq_num, audio_data
+        return None, None
+
+    def size(self):
+        return len(self.buffer)
 
 class Receiver:
     def __init__(self, receiver_socket, server_ip):
         self.sock = receiver_socket
-        self.server_ip = server_ip  # IP of the server to ping
-        self.received_data = []  # List to store received audio chunks
-        self.jitter_buffer = []  # Jitter buffer for audio packets
+        self.server_ip = server_ip
+        self.jitter_buffer = JitterBuffer(JITTER_BUFFER_SIZE)
         self.eot_received = False
-        self.rtt = 0  # Round-trip time (in milliseconds)
+        self.rtt = 100
+        self.running = True
+        self.last_rtt_update = 0
 
     def calculate_rtt(self):
-        """Calculate the RTT to the server using ICMP ping."""
+        """Calculate RTT to the server."""
         try:
-            ping_time = ping(self.server_ip)  # This sends an ICMP ping
+            ping_time = ping(self.server_ip)
             if ping_time is not None:
-                self.rtt = ping_time * 1000  # RTT in milliseconds
-                self.rtt = 200
-                print(f"RTT calculated: {self.rtt} ms")
+                self.rtt = ping_time * 1000
+                print(f"RTT: {self.rtt:.2f} ms")
             else:
-                print("RTT calculation failed (no response).")
+                print("RTT failed. Using previous RTT.")
         except Exception as e:
             print(f"Error calculating RTT: {e}")
 
-    def add_to_jitter_buffer(self, packet):
-        """Add a packet to the jitter buffer."""
-        self.jitter_buffer.append(packet)
-
-    def play_audio(self):
-        """Play audio from the jitter buffer."""
-        if len(self.jitter_buffer) > 0:
-            # Concatenate all received audio chunks
-            audio_bytes = b"".join(self.jitter_buffer)
-
-            # Convert bytes back to NumPy array (16-bit PCM format)
-            audio_data = np.frombuffer(audio_bytes, dtype=np.int16) / 32767.0
-
-            # Play the audio
-            print("Receiver: Playing received audio...")
-            sd.play(audio_data, samplerate=SAMPLE_RATE)
-            sd.wait()
-            self.jitter_buffer.clear()  # Clear the jitter buffer after playback
-            print("Receiver: Playback complete.")
-
     def play_audio_in_thread(self):
-        """Continuously play audio from jitter buffer with regular intervals."""
+        """Play audio from jitter buffer."""
         print("Audio player thread started")
-
-        # Configure non-blocking audio output
         with sd.OutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=np.float32) as stream:
-            while not self.eot_received:
-                if len(self.jitter_buffer) > 0:
-                    # Get audio bytes from jitter buffer
-                    audio_bytes = b"".join(self.jitter_buffer)
-                    self.jitter_buffer.clear()
+            while self.running and not self.eot_received:
+                if time.time() - self.last_rtt_update > RTT_UPDATE_INTERVAL:
+                    self.calculate_rtt()
+                    self.last_rtt_update = time.time()
 
-                    # Convert bytes to NumPy array (16-bit PCM format)
+                seq_num, audio_bytes = self.jitter_buffer.get_packet()
+                if audio_bytes is None:
+                    silence = np.zeros((SAMPLES_PER_PACKET, CHANNELS), dtype=np.float32)
+                    stream.write(silence)
+                else:
                     audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
-
-                    # Ensure correct shape for mono audio
-                    audio_data = np.reshape(audio_data, (-1, 1))
-
-                    # Write audio data to the stream (non-blocking)
+                    audio_data = np.reshape(audio_data, (-1, CHANNELS))
+                    if audio_data.shape[0] < SAMPLES_PER_PACKET:
+                        audio_data = np.pad(audio_data, ((0, SAMPLES_PER_PACKET - audio_data.shape[0]), (0, 0)))
+                    elif audio_data.shape[0] > SAMPLES_PER_PACKET:
+                        audio_data = audio_data[:SAMPLES_PER_PACKET]
                     stream.write(audio_data)
-
-                # Sleep for the playback interval to prevent CPU overuse
-                time.sleep(PLAYBACK_INTERVAL_MS / 1000.0)  # 20ms interval
+                time.sleep(PLAYBACK_INTERVAL_MS / 1000.0)
 
     def start(self):
         """Start receiving packets and playing audio."""
         print("Receiver: Listening for audio packets...")
-
-        # Start playback in a separate thread
+        self.sock.settimeout(1.0)
         playback_thread = threading.Thread(target=self.play_audio_in_thread)
         playback_thread.daemon = True
         playback_thread.start()
 
-        while True:
+        while self.running:
             try:
                 packet, addr = self.sock.recvfrom(PACKET_SIZE)
-
-                if addr[0] != SERVER_IP:
-                    # Add valid packet data to jitter buffer
-                    self.add_to_jitter_buffer(packet)
-
+                if addr[0] != self.server_ip or len(packet) < 4:
+                    continue
+                seq_num = struct.unpack(">I", packet[:4])[0]
+                audio_data = packet[4:]
+                if seq_num == EOT_SEQ_NUM:
+                    print("Received EOT signal")
+                    self.eot_received = True
+                    break
+                if len(audio_data) == BYTES_PER_PACKET:
+                    self.jitter_buffer.add_packet(seq_num, audio_data)
             except socket.timeout:
                 continue
+            except Exception as e:
+                print(f"Error receiving packet: {e}")
 
     def stop(self):
         """Stop the receiver."""
+        self.running = False
         self.sock.close()
-
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python Receiver.py <server_ip>")
+        print("Usage: python receiver.py <server_ip>")
         sys.exit(1)
 
-    global SERVER_IP
-
-    SERVER_IP = sys.argv[1]  # Get the server IP from command line argument
-
-    # Initialize the receiver socket and bind to listen for packets
+    global SERVER_IP, BYTES_PER_PACKET
+    SERVER_IP = sys.argv[1]
+    BYTES_PER_PACKET = SAMPLES_PER_PACKET * 2
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    receiver_sock.bind(("0.0.0.0", 9999))  # Listen on this port
-
+    receiver_sock.bind(("0.0.0.0", 9999))
     receiver = Receiver(receiver_sock, SERVER_IP)
-
-    # Start the receiver to begin receiving packets
-    receiver.start()
-
+    try:
+        receiver.start()
+    except KeyboardInterrupt:
+        print("Shutting down receiver...")
+        receiver.stop()
 
 if __name__ == "__main__":
     main()
