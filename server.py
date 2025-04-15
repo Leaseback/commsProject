@@ -1,6 +1,7 @@
 import socket
 import threading
 import time
+import select
 
 # Constants
 TCP_IP = "0.0.0.0"  # Listen on all interfaces for TCP
@@ -26,31 +27,36 @@ heartbeat_lock = threading.Lock()
 def handle_client(data, addr):
     """Handle audio packets from one client and forward to others."""
     # Ignore packets from unregistered clients
-    if addr[0] not in [client[0] for client in clients]:
+    if (addr[0], UDP_PORT) not in clients:
         print(f"Unregistered client {addr} attempted to send data.")
         return
 
     # Forward packets to all registered clients except sender
     with clients_lock:
         for client in clients:
-            if client != addr:
+            if client != (addr[0], UDP_PORT):
                 server_socket.sendto(data, client)
 
 
 def receive_audio():
-    """Receive audio packets from clients using UDP."""
+    server_socket.setblocking(False)
     print("Started receiving UDP audio packets.")
     while True:
         try:
-            data, addr = server_socket.recvfrom(BUFFER_SIZE)
-            threading.Thread(target=handle_client, args=(data, addr)).start()
-        except Exception as e:
+            readable, _, _ = select.select([server_socket], [], [], 1.0)
+            if server_socket in readable:
+                data, addr = server_socket.recvfrom(BUFFER_SIZE)
+                handle_client(data, addr)
+        except socket.error as e:
             print(f"Error receiving data: {e}")
+        except KeyboardInterrupt:
+            print("Shutting down UDP receiver...")
+            break
 
 
 def handle_tcp_client(tcp_conn, tcp_addr):
     """Handle TCP handshake, heartbeats, and register the client for UDP communication."""
-    global last_heartbeat
+    # global last_heartbeat
 
     try:
         tcp_conn.settimeout(TCP_TIMEOUT)  # Set TCP timeout for handshake
@@ -75,6 +81,13 @@ def handle_tcp_client(tcp_conn, tcp_addr):
                 last_heartbeat[tcp_addr[0]] = time.time()
                 tcp_conn.send(b"ALIVE")  # Acknowledge the heartbeat
                 print(f"Heartbeat received from {tcp_addr[0]}")
+        elif data == b"DISCONNECT":
+            with clients_lock:
+                clients.discard((tcp_addr[0], UDP_PORT))
+            with heartbeat_lock:
+                last_heartbeat.pop(tcp_addr[0], None)
+            tcp_conn.send(b"BYE")
+            print(f"Client {tcp_addr[0]} disconnected gracefully.")
 
         else:
             print(f"Invalid handshake or message from {tcp_addr}")
@@ -96,32 +109,34 @@ def tcp_handshake_listener():
     tcp_socket.bind((TCP_IP, TCP_PORT))
     tcp_socket.listen(5)
     print(f"TCP handshake and heartbeat server listening on {TCP_IP}:{TCP_PORT}...")
-
-    while True:
-        tcp_conn, tcp_addr = tcp_socket.accept()
-        threading.Thread(target=handle_tcp_client, args=(tcp_conn, tcp_addr)).start()
+    try:
+        while True:
+            tcp_conn, tcp_addr = tcp_socket.accept()
+            threading.Thread(target=handle_tcp_client, args=(tcp_conn, tcp_addr)).start()
+    except KeyboardInterrupt:
+        print("Shutting down TCP listener...")
+        tcp_socket.close()
 
 
 def heartbeat_monitor():
     """Check for clients that have not sent a heartbeat within the timeout window."""
-    global last_heartbeat, clients
-
     while True:
-        time.sleep(HEARTBEAT_INTERVAL)  # Check every 10 seconds
-        current_time = time.time()
-
-        with heartbeat_lock:
+        try:
+            time.sleep(HEARTBEAT_INTERVAL)
+            current_time = time.time()
             to_remove = []
-            for client_ip, last_time in last_heartbeat.items():
-                if current_time - last_time > HEARTBEAT_TIMEOUT:
-                    print(f"Client {client_ip} timed out due to missed heartbeat.")
-                    to_remove.append(client_ip)
-
-            # Remove timed-out clients
+            with heartbeat_lock:
+                for client_ip, last_time in last_heartbeat.items():
+                    if current_time - last_time > HEARTBEAT_TIMEOUT:
+                        to_remove.append(client_ip)
             with clients_lock:
                 for client_ip in to_remove:
-                    clients = {c for c in clients if c[0] != client_ip}
-                    del last_heartbeat[client_ip]  # Remove heartbeat tracking
+                    clients.discard((client_ip, UDP_PORT))
+                    print(f"Client {client_ip} timed out due to missed heartbeat.")
+                    last_heartbeat.pop(client_ip, None)
+        except KeyboardInterrupt:
+            print("Shutting down heartbeat monitor...")
+            break
 
 
 def main():
@@ -133,14 +148,18 @@ def main():
     server_socket.bind(("0.0.0.0", UDP_PORT))
     print(f"UDP audio server listening on {UDP_IP}:{UDP_PORT}...")
 
-    # Start TCP handshake/heartbeat listener in a separate thread
-    threading.Thread(target=tcp_handshake_listener, daemon=True).start()
+    try:
+        # Start TCP handshake/heartbeat listener in a separate thread
+        threading.Thread(target=tcp_handshake_listener, daemon=True).start()
 
-    # Start heartbeat monitor in a separate thread
-    threading.Thread(target=heartbeat_monitor, daemon=True).start()
+        # Start heartbeat monitor in a separate thread
+        threading.Thread(target=heartbeat_monitor, daemon=True).start()
 
-    # Start receiving UDP audio packets
-    receive_audio()
+        # Start receiving UDP audio packets
+        receive_audio()
+    except KeyboardInterrupt:
+        print("Shutting down server...")
+        server_socket.close()
 
 
 if __name__ == "__main__":
