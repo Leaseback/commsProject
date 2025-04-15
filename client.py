@@ -5,6 +5,7 @@ import struct
 import sys
 import threading
 import time
+import argparse
 from collections import deque
 
 # Constants
@@ -15,7 +16,7 @@ BYTES_PER_PACKET = CHUNK_SIZE * 2  # 1764 bytes
 PACKET_SIZE = 2200  # Buffer size (1768 bytes used)
 EOT_SEQ_NUM = 99999999
 JITTER_BUFFER_SIZE = 8
-PLAYBACK_INTERVAL_MS = 20
+PLAYBACK_INTERVAL_MS = 10
 TCP_PORT = 8888
 UDP_SERVER_PORT = 9999
 TIMEOUT = 2
@@ -250,12 +251,15 @@ class Client:
         self.udp_sock.close()
 
 def main():
-    if len(sys.argv) < 4:
-        print("Usage: python client.py <server_ip> <udp_port> <target_ip>")
-        sys.exit(1)
-    server_ip = sys.argv[1]
-    udp_port = int(sys.argv[2])
-    target_ip = sys.argv[3]
+    parser = argparse.ArgumentParser(description="VoIP Client")
+    parser.add_argument("server_ip", help="Server URL/IP Address")
+    parser.add_argument("udp_port", help="Specify a open port on system for UDP traffic")
+    parser.add_argument("target_ip", help="IP of the other machine running the client")
+    args = parser.parse_args()
+
+    server_ip = args.server_ip
+    udp_port = int(args.udp_port)
+    target_ip = args.target_ip
     client = Client(udp_port, server_ip, target_ip)
     client.start()
 
