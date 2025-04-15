@@ -13,21 +13,25 @@ PACKET_SIZE = 2200
 EOT_SEQ_NUM = 99999999
 SAMPLE_RATE = 44100
 CHANNELS = 1
-JITTER_BUFFER_SIZE = 4  # 4 packets = 80ms
+JITTER_BUFFER_SIZE = 4
 RTT_UPDATE_INTERVAL = 10
 PLAYBACK_INTERVAL_MS = 20
-SAMPLES_PER_PACKET = 882  # 20ms at 44100Hz
+SAMPLES_PER_PACKET = 882
 SERVER_IP = None
+TCP_PORT = 8888
+UDP_PORT = 10000  # Receiver's UDP port
+HELLO_PACKET = b"HELLO" + struct.pack(">I", UDP_PORT)  # Send port
+WELCOME_PACKET = b"WELCOME"
+TIMEOUT = 2
+MAX_RETRIES = 3
 
 class JitterBuffer:
-    """A jitter buffer to store and reorder audio packets."""
     def __init__(self, max_size):
         self.buffer = deque(maxlen=max_size)
         self.max_size = max_size
         self.expected_seq_num = None
 
     def add_packet(self, seq_num, audio_data):
-        """Add a packet to the buffer, maintaining order."""
         if self.expected_seq_num is not None and seq_num < self.expected_seq_num - self.max_size:
             return False
         packet = (seq_num, audio_data)
@@ -47,7 +51,6 @@ class JitterBuffer:
         return True
 
     def get_packet(self):
-        """Retrieve the next packet for playback."""
         if not self.buffer:
             return None, None
         seq_num, audio_data = self.buffer[0]
@@ -71,7 +74,6 @@ class Receiver:
         self.last_rtt_update = 0
 
     def calculate_rtt(self):
-        """Calculate RTT to the server."""
         try:
             ping_time = ping(self.server_ip)
             if ping_time is not None:
@@ -83,14 +85,12 @@ class Receiver:
             print(f"Error calculating RTT: {e}")
 
     def play_audio_in_thread(self):
-        """Play audio from jitter buffer."""
         print("Audio player thread started")
         with sd.OutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=np.float32) as stream:
             while self.running and not self.eot_received:
                 if time.time() - self.last_rtt_update > RTT_UPDATE_INTERVAL:
                     self.calculate_rtt()
                     self.last_rtt_update = time.time()
-
                 seq_num, audio_bytes = self.jitter_buffer.get_packet()
                 if audio_bytes is None:
                     silence = np.zeros((SAMPLES_PER_PACKET, CHANNELS), dtype=np.float32)
@@ -106,17 +106,17 @@ class Receiver:
                 time.sleep(PLAYBACK_INTERVAL_MS / 1000.0)
 
     def start(self):
-        """Start receiving packets and playing audio."""
         print("Receiver: Listening for audio packets...")
         self.sock.settimeout(1.0)
         playback_thread = threading.Thread(target=self.play_audio_in_thread)
         playback_thread.daemon = True
         playback_thread.start()
-
         while self.running:
             try:
                 packet, addr = self.sock.recvfrom(PACKET_SIZE)
+                print(f"Received packet from {addr}, size: {len(packet)}")
                 if addr[0] != self.server_ip or len(packet) < 4:
+                    print(f"Discarded packet from {addr}")
                     continue
                 seq_num = struct.unpack(">I", packet[:4])[0]
                 audio_data = packet[4:]
@@ -126,26 +126,58 @@ class Receiver:
                     break
                 if len(audio_data) == BYTES_PER_PACKET:
                     self.jitter_buffer.add_packet(seq_num, audio_data)
+                    print(f"Added packet seq_num: {seq_num}")
+                else:
+                    print(f"Invalid audio data size: {len(audio_data)}")
             except socket.timeout:
                 continue
             except Exception as e:
                 print(f"Error receiving packet: {e}")
 
     def stop(self):
-        """Stop the receiver."""
         self.running = False
         self.sock.close()
+
+def tcp_handshake(server_ip, tcp_port):
+    for attempt in range(MAX_RETRIES):
+        try:
+            print(f"Attempting TCP handshake with {server_ip}:{tcp_port} (Attempt {attempt + 1})...")
+            tcp_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp_sock.settimeout(TIMEOUT)
+            tcp_sock.connect((server_ip, tcp_port))
+            tcp_sock.send(HELLO_PACKET)
+            response = tcp_sock.recv(1024)
+            if response == WELCOME_PACKET:
+                print("Handshake successful! Ready to receive audio.")
+                return True
+            elif response == b"FULL":
+                print("Server is full. Cannot connect.")
+                return False
+            else:
+                print("Unexpected response during handshake.")
+        except (socket.timeout, ConnectionRefusedError) as e:
+            print(f"Handshake failed: {e}")
+        finally:
+            try:
+                tcp_sock.close()
+            except:
+                pass
+    print("Handshake failed after maximum retries.")
+    return False
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python receiver.py <server_ip>")
         sys.exit(1)
-
     global SERVER_IP, BYTES_PER_PACKET
     SERVER_IP = sys.argv[1]
     BYTES_PER_PACKET = SAMPLES_PER_PACKET * 2
+    if not tcp_handshake(SERVER_IP, TCP_PORT):
+        print("Failed to establish connection. Exiting.")
+        sys.exit(1)
     receiver_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    receiver_sock.bind(("0.0.0.0", 9999))
+    receiver_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    receiver_sock.bind(("0.0.0.0", UDP_PORT))
     receiver = Receiver(receiver_sock, SERVER_IP)
     try:
         receiver.start()
