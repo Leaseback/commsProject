@@ -1,0 +1,140 @@
+commit 8ab8e22277b00988aaebd2b7bdccbfd01fb40de1
+Merge: a909e58 9d7bcc6
+Author: caschwarz <clarkaschwarz@outlook.com>
+Date:   Wed Apr 16 20:50:51 2025 -0400
+
+    Merge branch 'master' of https://github.com/Leaseback/commsProject into clark
+
+commit a909e58bd81651e2e5c7a1aefd704a40b2ff4a67
+Author: caschwarz <clarkaschwarz@outlook.com>
+Date:   Wed Apr 16 20:44:21 2025 -0400
+
+    adding dependency installation
+
+commit 9d7bcc6e0d141cbc193ec00a7fa54cabddbb0d31
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 17:45:00 2025 -0400
+
+    Removed audio, launcher, and receiver as they were replaced with client.py
+
+commit 991a5ed9869c585e528c2c012c9b8caeae4c91e8
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 17:43:49 2025 -0400
+
+    Client working with smooth audio
+
+commit a54907a1f1c52d8df158960c289fa9481a577491
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 17:15:50 2025 -0400
+
+    Fixed jitter buffer in client.
+
+commit 029c8377821711c67bede422a27fb20b31ae6a09
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 16:31:56 2025 -0400
+
+    attempt to remove audio and receiver and combine them into client.py. Currently broken
+
+commit e9930d041e140166624b173f876ff74c76180bd0
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 12:10:25 2025 -0400
+
+    Updated jitterbuffer and optimized audio and receiver
+
+commit ea6afb9927918ff5c245986ca45ad0de444deb79
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 11:26:51 2025 -0400
+
+    optimized threading, added graceful shutdown, added client dissconnect handling, added bottle neck handling in server
+
+commit 052fa68afda110cfa7cb04b9b28bd5bb0704a9c0
+Author: drs7727 <drs7727@rit.edu>
+Date:   Tue Apr 15 10:53:29 2025 -0400
+
+    Added requirements.txt plus test commit
+
+commit 0945100e45b8cfe7451a24153f7bb3b1bc317b45
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 13:16:06 2025 -0400
+
+    Update README.md
+
+commit 36d6ac537586d4876cfe2b96adb7f7a31cd7fb23
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 13:06:35 2025 -0400
+
+    Create README.md
+    
+    Readme made
+
+commit f17492bf77d7bb941600ebf2b2e10074028711c9
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 10:55:00 2025 -0400
+
+    launcher added... launches audio and receiver and asks for server ip
+
+commit 5514ebf31b1fc4c80d5083bf94fd1ce8c666d6f1
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 10:46:51 2025 -0400
+
+    Server.py: Added heartbeat check. Disconnects users if heartbeat not received within 120 seconds
+
+commit 11ad6d9ea00e7774da9369008c558a4ecb58cdc5
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 10:46:33 2025 -0400
+
+    Receiver.py: Cleaned up code; Removed EOT packet check
+
+commit a1737b49bccf4f26fccec40e29bb6b3169100d0a
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Mon Mar 31 10:46:08 2025 -0400
+
+    Audio.py: Added TCP heartbeat every 30 seconds
+
+commit 901ba23434ab9a569532e8f68953b449b135c294
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 21:55:45 2025 -0400
+
+    Server print statements removed
+
+commit a2b4f354f24c8bea7fb731b026e6b479012fc0ce
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 20:23:19 2025 -0400
+
+    audio.py now can send to any IP, sockets bound correctly
+    receiver listens on cusotmizable server_ip now
+    server TCP timeout added; listens on 0.0.0.0
+
+commit 068a83b87032dc6d20835c70468ac6e26f3be1cb
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 18:53:32 2025 -0400
+
+    Receiver audio sends wayyy better now
+
+commit 3ea27caa4fc830ad94b7511aa1ab5a472c379c49
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 13:16:38 2025 -0400
+
+    Buffewr size increased to allow packets to come through
+    
+    Audio constantly sends audio packets now
+
+commit bf8c072b1cc87dca8294437c9c3eeffab9349f82
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 12:36:48 2025 -0400
+
+    Server and client now use TCP handshake
+
+commit 4a8d070b27450ee598422d6008206ddeb81e4215
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 12:18:51 2025 -0400
+
+    Initial server (no handshake)
+
+commit 0ba71d3163cf7eaa84915075492d67d2274f4fdc
+Author: Kyle Kaczorowski <69587926+Leaseback@users.noreply.github.com>
+Date:   Sun Mar 30 11:53:58 2025 -0400
+
+    Initial audio test
+    
+    Can send audio receive it and play it back
